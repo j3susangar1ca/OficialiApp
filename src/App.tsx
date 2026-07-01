@@ -5,7 +5,10 @@ import {
   db,
   storage,
   signInWithPopup,
-  signOut
+  signOut,
+  onDatabaseFallback,
+  setFirestoreDatabaseId,
+  fallbackToDefaultDatabase
 } from "./firebase";
 import {
   onAuthStateChanged,
@@ -76,8 +79,23 @@ interface FirestoreErrorInfo {
 }
 
 function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+  const errMsg = error instanceof Error ? error.message : String(error);
+  
+  // Intercept database-not-found errors to trigger automatic fallback
+  const isNotFound = 
+    errMsg.toLowerCase().includes("database") && (errMsg.toLowerCase().includes("not found") || errMsg.toLowerCase().includes("not_found")) ||
+    (error && typeof error === "object" && "code" in error && (error as any).code === "not-found");
+
+  if (isNotFound) {
+    const swapped = fallbackToDefaultDatabase();
+    if (swapped) {
+      console.warn("Database fallback was triggered because of error:", errMsg);
+      return; // Silently suppress the error because the fallback listener will re-trigger the subscriptions
+    }
+  }
+
   const errInfo: FirestoreErrorInfo = {
-    error: error instanceof Error ? error.message : String(error),
+    error: errMsg,
     authInfo: {
       userId: auth.currentUser?.uid,
       email: auth.currentUser?.email,
@@ -92,7 +110,7 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
     operationType,
     path
   };
-  console.error('Firestore Error: ', JSON.stringify(errInfo));
+  console.error("Firestore Error: ", JSON.stringify(errInfo));
   throw new Error(JSON.stringify(errInfo));
 }
 
@@ -136,10 +154,41 @@ export default function App() {
   const [documents, setDocuments] = useState<IncomingDocument[]>([]);
   const [directory, setDirectory] = useState<Contact[]>([]);
   const [documentsLoading, setDocumentsLoading] = useState(true);
+  const [dbTrigger, setDbTrigger] = useState(0);
 
   // Active analysis upload states
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [analysisResult, setAnalysisResult] = useState<any | null>(null);
+
+  // Load Server Configuration for dynamic Firestore Database ID at runtime
+  useEffect(() => {
+    const fetchConfig = async () => {
+      try {
+        const res = await fetch("/api/config");
+        if (res.ok) {
+          const data = await res.json();
+          if (data.firestoreDatabaseId) {
+            setFirestoreDatabaseId(data.firestoreDatabaseId);
+          }
+        }
+      } catch (err) {
+        console.warn("Failed to fetch runtime Firestore configuration, using default/env.", err);
+      }
+    };
+    fetchConfig();
+  }, []);
+
+  // Subscribe to Firestore Fallback updates
+  useEffect(() => {
+    const unsubscribeFallback = onDatabaseFallback(() => {
+      setDbTrigger(prev => prev + 1);
+      showToast(
+        "Se restableció la conexión utilizando la base de datos de respaldo '(default)'.",
+        "success"
+      );
+    });
+    return unsubscribeFallback;
+  }, []);
 
   // 1. Monitor Authentication State
   useEffect(() => {
@@ -236,7 +285,7 @@ export default function App() {
       unsubscribeDocs();
       unsubscribeDir();
     };
-  }, [user]);
+  }, [user, dbTrigger]);
 
   // Seed Helper
   const seedDirectoryDatabase = async () => {

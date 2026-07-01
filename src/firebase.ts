@@ -1,6 +1,6 @@
 import { initializeApp } from "firebase/app";
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut } from "firebase/auth";
-import { getFirestore } from "firebase/firestore";
+import { getFirestore, Firestore } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 
 const firebaseConfig = {
@@ -23,8 +23,98 @@ const googleProvider = new GoogleAuthProvider();
 // so that the user is NEVER blocked from testing the app!
 // Let's implement Google Sign-In but also a quick admin login bypass option when in local testing!
 
-const db = getFirestore(app, "ai-studio-e14611bc-01b9-4d72-b031-180fa9b98c45");
+const defaultDb = getFirestore(app);
+let currentDb: Firestore = defaultDb;
+
+// Check if a client-side environment variable is present (e.g. VITE_FIRESTORE_DATABASE_ID)
+const envDatabaseId = (import.meta as any).env.VITE_FIRESTORE_DATABASE_ID;
+const initialDatabaseId = envDatabaseId && envDatabaseId.trim() !== "" ? envDatabaseId.trim() : null;
+
+try {
+  if (initialDatabaseId && initialDatabaseId !== "(default)") {
+    currentDb = getFirestore(app, initialDatabaseId);
+    console.log(`Firestore initialized with configured database: ${initialDatabaseId}`);
+  } else {
+    currentDb = defaultDb;
+    console.log("Firestore initialized with default database: (default)");
+  }
+} catch (e) {
+  console.warn("Failed to initialize custom Firestore database, falling back to default:", e);
+  currentDb = defaultDb;
+}
+
+let fallbackListeners: (() => void)[] = [];
+
+export function onDatabaseFallback(callback: () => void) {
+  fallbackListeners.push(callback);
+  return () => {
+    fallbackListeners = fallbackListeners.filter((l) => l !== callback);
+  };
+}
+
+export function fallbackToDefaultDatabase() {
+  if (currentDb !== defaultDb) {
+    console.warn("Critical: Database not found. Swapped Firestore instance to (default) dynamically.");
+    currentDb = defaultDb;
+    fallbackListeners.forEach((listener) => {
+      try {
+        listener();
+      } catch (err) {
+        console.error("Error executing database fallback listener:", err);
+      }
+    });
+    return true;
+  }
+  return false;
+}
+
+export function setFirestoreDatabaseId(databaseId: string) {
+  const targetId = databaseId && databaseId.trim() !== "" ? databaseId.trim() : "(default)";
+  if (targetId === "(default)") {
+    if (currentDb !== defaultDb) {
+      currentDb = defaultDb;
+      console.log("Firestore database ID dynamically reset to: (default)");
+      fallbackListeners.forEach((listener) => {
+        try {
+          listener();
+        } catch (err) {
+          console.error("Error executing database fallback listener:", err);
+        }
+      });
+    }
+  } else {
+    try {
+      const newDb = getFirestore(app, targetId);
+      currentDb = newDb;
+      console.log(`Firestore database ID dynamically set to: ${targetId}`);
+      fallbackListeners.forEach((listener) => {
+        try {
+          listener();
+        } catch (err) {
+          console.error("Error executing database fallback listener:", err);
+        }
+      });
+    } catch (e) {
+      console.warn(`Failed to set Firestore database ID to ${targetId}, falling back to default:`, e);
+      currentDb = defaultDb;
+    }
+  }
+}
+
+// Proxy wrapper for Firestore to handle transparent on-the-fly instance swapping
+const dbProxy = new Proxy({} as Firestore, {
+  get(target, prop, receiver) {
+    const value = Reflect.get(currentDb, prop);
+    if (typeof value === "function") {
+      return value.bind(currentDb);
+    }
+    return value;
+  },
+  set(target, prop, value, receiver) {
+    return Reflect.set(currentDb, prop, value);
+  }
+});
 
 const storage = getStorage(app);
 
-export { app, auth, googleProvider, db, storage, signInWithPopup, signOut };
+export { app, auth, googleProvider, dbProxy as db, storage, signInWithPopup, signOut };

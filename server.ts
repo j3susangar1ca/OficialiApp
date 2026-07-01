@@ -9,8 +9,20 @@ import { JWT } from "google-auth-library";
 // Load environment variables
 dotenv.config();
 
+// Bridge server-side FIRESTORE_DATABASE_ID to VITE_FIRESTORE_DATABASE_ID so Vite server picks it up
+if (process.env.FIRESTORE_DATABASE_ID) {
+  process.env.VITE_FIRESTORE_DATABASE_ID = process.env.FIRESTORE_DATABASE_ID;
+}
+
 const app = express();
 const PORT = 3000;
+
+// Expose runtime public configurations to the client
+app.get("/api/config", (req, res) => {
+  res.json({
+    firestoreDatabaseId: process.env.FIRESTORE_DATABASE_ID || process.env.VITE_FIRESTORE_DATABASE_ID || "(default)"
+  });
+});
 
 // Set up memory storage for multer to handle uploaded files safely in memory
 const upload = multer({
