@@ -26,6 +26,8 @@ const googleProvider = new GoogleAuthProvider();
 const defaultDb = getFirestore(app);
 let currentDb: Firestore = defaultDb;
 
+export let db: Firestore;
+
 // Check if a client-side environment variable is present (e.g. VITE_FIRESTORE_DATABASE_ID)
 const envDatabaseId = (import.meta as any).env.VITE_FIRESTORE_DATABASE_ID;
 const initialDatabaseId = envDatabaseId && envDatabaseId.trim() !== "" ? envDatabaseId.trim() : null;
@@ -43,6 +45,9 @@ try {
   currentDb = defaultDb;
 }
 
+// Assign initial value to exported let binding
+db = currentDb;
+
 let fallbackListeners: (() => void)[] = [];
 
 export function onDatabaseFallback(callback: () => void) {
@@ -56,6 +61,7 @@ export function fallbackToDefaultDatabase() {
   if (currentDb !== defaultDb) {
     console.warn("Critical: Database not found. Swapped Firestore instance to (default) dynamically.");
     currentDb = defaultDb;
+    db = currentDb; // Update exported live binding
     fallbackListeners.forEach((listener) => {
       try {
         listener();
@@ -73,6 +79,7 @@ export function setFirestoreDatabaseId(databaseId: string) {
   if (targetId === "(default)") {
     if (currentDb !== defaultDb) {
       currentDb = defaultDb;
+      db = currentDb; // Update exported live binding
       console.log("Firestore database ID dynamically reset to: (default)");
       fallbackListeners.forEach((listener) => {
         try {
@@ -86,6 +93,7 @@ export function setFirestoreDatabaseId(databaseId: string) {
     try {
       const newDb = getFirestore(app, targetId);
       currentDb = newDb;
+      db = currentDb; // Update exported live binding
       console.log(`Firestore database ID dynamically set to: ${targetId}`);
       fallbackListeners.forEach((listener) => {
         try {
@@ -97,24 +105,11 @@ export function setFirestoreDatabaseId(databaseId: string) {
     } catch (e) {
       console.warn(`Failed to set Firestore database ID to ${targetId}, falling back to default:`, e);
       currentDb = defaultDb;
+      db = currentDb; // Update exported live binding
     }
   }
 }
 
-// Proxy wrapper for Firestore to handle transparent on-the-fly instance swapping
-const dbProxy = new Proxy({} as Firestore, {
-  get(target, prop, receiver) {
-    const value = Reflect.get(currentDb, prop);
-    if (typeof value === "function") {
-      return value.bind(currentDb);
-    }
-    return value;
-  },
-  set(target, prop, value, receiver) {
-    return Reflect.set(currentDb, prop, value);
-  }
-});
-
 const storage = getStorage(app);
 
-export { app, auth, googleProvider, dbProxy as db, storage, signInWithPopup, signOut };
+export { app, auth, googleProvider, storage, signInWithPopup, signOut };
