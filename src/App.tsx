@@ -376,19 +376,28 @@ export default function App() {
 
   // Upload PDF file to Firebase Storage with local blob fallback for durability
   const uploadDocumentPDF = async (file: File, folioId: string): Promise<string> => {
+    const localFallback = () => new Promise<string>((resolve) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result as string);
+      reader.readAsDataURL(file);
+    });
+
     try {
-      const storageRef = ref(storage, `documents/${folioId}_${file.name}`);
-      const uploadResult = await uploadBytes(storageRef, file);
-      const downloadURL = await getDownloadURL(uploadResult.ref);
-      return downloadURL;
+      // 2.5 second timeout to avoid Firebase SDK's long default retry loops when storage is cold or unprovisioned
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("Storage upload timeout")), 2500)
+      );
+
+      const uploadPromise = (async () => {
+        const storageRef = ref(storage, `documents/${folioId}_${file.name}`);
+        const uploadResult = await uploadBytes(storageRef, file);
+        return await getDownloadURL(uploadResult.ref);
+      })();
+
+      return await Promise.race([uploadPromise, timeoutPromise]);
     } catch (error) {
-      console.warn("Storage upload failed, falling back to durable blob / base64 string:", error);
-      // Return local FileReader Data URL as a failover URL. This means the app is 100% immune to storage initialization errors.
-      return new Promise((resolve) => {
-        const reader = new FileReader();
-        reader.onloadend = () => resolve(reader.result as string);
-        reader.readAsDataURL(file);
-      });
+      console.warn("Storage upload failed or timed out, falling back to fast base64 string:", error);
+      return localFallback();
     }
   };
 

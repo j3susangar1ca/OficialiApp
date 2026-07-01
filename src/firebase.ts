@@ -39,22 +39,14 @@ const finalDbId = rawDbId && rawDbId !== "(default)" ? rawDbId : "ai-studio-e146
 
 console.log(`Firestore initializing with database ID: "${finalDbId}"`);
 
-let activeDb: Firestore;
+export let db: Firestore;
+
 try {
-  activeDb = getFirestore(app, finalDbId);
+  db = getFirestore(app, finalDbId);
 } catch (error) {
   console.warn("Firestore initialization failed. Falling back to default getFirestore.", error);
-  activeDb = getFirestore(app);
+  db = getFirestore(app);
 }
-
-export const db = new Proxy({} as Firestore, {
-  get(target, prop, receiver) {
-    return Reflect.get(activeDb, prop, receiver);
-  },
-  set(target, prop, value, receiver) {
-    return Reflect.set(activeDb, prop, value, receiver);
-  }
-});
 
 // Provide backward-compatible mock helpers to satisfy existing imports in App.tsx
 let fallbackListeners: (() => void)[] = [];
@@ -70,8 +62,8 @@ export function fallbackToDefaultDatabase() {
   console.log("fallbackToDefaultDatabase called!");
   try {
     const defaultDb = getFirestore(app);
-    if (activeDb !== defaultDb) {
-      activeDb = defaultDb;
+    if (db !== defaultDb) {
+      db = defaultDb;
       console.log("Swapped active database to default (default)");
       fallbackListeners.forEach((callback) => {
         try {
@@ -92,6 +84,24 @@ export function setFirestoreDatabaseId(databaseId: string) {
   console.log(`setFirestoreDatabaseId called with: ${databaseId}. Checking configuration...`);
   if (databaseId === "(default)") {
     fallbackToDefaultDatabase();
+  } else {
+    try {
+      const customDb = getFirestore(app, databaseId);
+      if (db !== customDb) {
+        db = customDb;
+        console.log(`Swapped active database to custom ID: ${databaseId}`);
+        fallbackListeners.forEach((callback) => {
+          try {
+            callback();
+          } catch (e) {
+            console.error("Error running database fallback listener:", e);
+          }
+        });
+      }
+    } catch (error) {
+      console.error(`Error swapping to custom database ${databaseId}, falling back to default:`, error);
+      fallbackToDefaultDatabase();
+    }
   }
 }
 
