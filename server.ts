@@ -1,5 +1,6 @@
 import express from "express";
 import path from "path";
+import fs from "fs";
 import multer from "multer";
 import dotenv from "dotenv";
 import { GoogleGenAI } from "@google/genai";
@@ -10,8 +11,10 @@ import { JWT } from "google-auth-library";
 dotenv.config();
 
 // Bridge server-side FIRESTORE_DATABASE_ID to VITE_FIRESTORE_DATABASE_ID so Vite server picks it up
-if (process.env.FIRESTORE_DATABASE_ID) {
-  process.env.VITE_FIRESTORE_DATABASE_ID = process.env.FIRESTORE_DATABASE_ID;
+const cleanDbId = (process.env.FIRESTORE_DATABASE_ID || "").trim();
+if (cleanDbId) {
+  process.env.FIRESTORE_DATABASE_ID = cleanDbId;
+  process.env.VITE_FIRESTORE_DATABASE_ID = cleanDbId;
 }
 
 const app = express();
@@ -20,7 +23,7 @@ const PORT = 3000;
 // Expose runtime public configurations to the client
 app.get("/api/config", (req, res) => {
   res.json({
-    firestoreDatabaseId: process.env.FIRESTORE_DATABASE_ID || process.env.VITE_FIRESTORE_DATABASE_ID || "(default)"
+    firestoreDatabaseId: (process.env.FIRESTORE_DATABASE_ID || process.env.VITE_FIRESTORE_DATABASE_ID || "(default)").trim()
   });
 });
 
@@ -252,9 +255,19 @@ async function setupServer() {
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), "dist");
-    app.use(express.static(distPath));
+    app.use(express.static(distPath, { index: false })); // Avoid serving raw index.html by default
     app.get("*", (req, res) => {
-      res.sendFile(path.join(distPath, "index.html"));
+      const indexPath = path.join(distPath, "index.html");
+      try {
+        let html = fs.readFileSync(indexPath, "utf8");
+        const dbId = (process.env.FIRESTORE_DATABASE_ID || "").trim();
+        const injection = `<script>window.FIRESTORE_DATABASE_ID = "${dbId}";</script>`;
+        html = html.replace("<head>", `<head>${injection}`);
+        res.send(html);
+      } catch (err) {
+        console.error("Error reading or processing index.html in production:", err);
+        res.sendFile(indexPath);
+      }
     });
   }
 
