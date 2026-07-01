@@ -1,0 +1,6 @@
+{
+  "name": "Oficialía de Partes Digital",
+  "description": "Automatización del proceso de oficialía de partes mediante extracción inteligente de metadatos de oficios PDF con IA y almacenamiento seguro.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

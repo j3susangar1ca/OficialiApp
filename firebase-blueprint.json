@@ -1,0 +1,77 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User profile representation in Firestore",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "name": { "type": "string" }
+      },
+      "required": ["uid", "email", "name"]
+    },
+    "Contact": {
+      "title": "Contact",
+      "description": "Directory contacts",
+      "type": "object",
+      "properties": {
+        "contact_id": { "type": "string" },
+        "name": { "type": "string" },
+        "title": { "type": "string" },
+        "organization": { "type": "string" }
+      },
+      "required": ["name", "organization"]
+    },
+    "IncomingDocument": {
+      "title": "IncomingDocument",
+      "description": "Documents processed and registered by the office",
+      "type": "object",
+      "properties": {
+        "folio_id": { "type": "string" },
+        "doc_number": { "type": "string" },
+        "sender_name": { "type": "string" },
+        "sender_title": { "type": "string" },
+        "sender_organization": { "type": "string" },
+        "recipient_name": { "type": "string" },
+        "recipient_title": { "type": "string" },
+        "date_document": { "type": "string" },
+        "date_reception": { "type": "string" },
+        "time_reception": { "type": "string" },
+        "subject": { "type": "string" },
+        "classification": { "type": "string", "enum": ["requiere_accion", "informativo"] },
+        "pdf_url": { "type": "string" },
+        "registered_by": { "type": "string" },
+        "status": { "type": "string", "enum": ["pendiente", "atendido", "archivado"] },
+        "notes": { "type": "string" }
+      },
+      "required": [
+        "folio_id",
+        "doc_number",
+        "sender_name",
+        "recipient_name",
+        "date_document",
+        "date_reception",
+        "time_reception",
+        "subject",
+        "classification",
+        "pdf_url",
+        "registered_by"
+      ]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "Users of the application"
+    },
+    "/directory/{contactId}": {
+      "schema": "Contact",
+      "description": "Directory of contacts"
+    },
+    "/incoming_documents/{documentId}": {
+      "schema": "IncomingDocument",
+      "description": "Registered documents in the system"
+    }
+  }
+}
