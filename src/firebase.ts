@@ -39,15 +39,22 @@ const finalDbId = rawDbId && rawDbId !== "(default)" ? rawDbId : "ai-studio-e146
 
 console.log(`Firestore initializing with database ID: "${finalDbId}"`);
 
-let currentDb: Firestore;
+let activeDb: Firestore;
 try {
-  currentDb = getFirestore(app, finalDbId);
+  activeDb = getFirestore(app, finalDbId);
 } catch (error) {
   console.warn("Firestore initialization failed. Falling back to default getFirestore.", error);
-  currentDb = getFirestore(app);
+  activeDb = getFirestore(app);
 }
 
-export const db = currentDb;
+export const db = new Proxy({} as Firestore, {
+  get(target, prop, receiver) {
+    return Reflect.get(activeDb, prop, receiver);
+  },
+  set(target, prop, value, receiver) {
+    return Reflect.set(activeDb, prop, value, receiver);
+  }
+});
 
 // Provide backward-compatible mock helpers to satisfy existing imports in App.tsx
 let fallbackListeners: (() => void)[] = [];
@@ -60,12 +67,32 @@ export function onDatabaseFallback(callback: () => void) {
 }
 
 export function fallbackToDefaultDatabase() {
-  console.log("fallbackToDefaultDatabase called (no-op in optimized connection mode)");
+  console.log("fallbackToDefaultDatabase called!");
+  try {
+    const defaultDb = getFirestore(app);
+    if (activeDb !== defaultDb) {
+      activeDb = defaultDb;
+      console.log("Swapped active database to default (default)");
+      fallbackListeners.forEach((callback) => {
+        try {
+          callback();
+        } catch (e) {
+          console.error("Error running database fallback listener:", e);
+        }
+      });
+      return true;
+    }
+  } catch (error) {
+    console.error("Error falling back to default database:", error);
+  }
   return false;
 }
 
 export function setFirestoreDatabaseId(databaseId: string) {
-  console.log(`setFirestoreDatabaseId called with: ${databaseId}. Instance locked to initialized database ID: ${finalDbId}`);
+  console.log(`setFirestoreDatabaseId called with: ${databaseId}. Checking configuration...`);
+  if (databaseId === "(default)") {
+    fallbackToDefaultDatabase();
+  }
 }
 
 const storage = getStorage(app);
